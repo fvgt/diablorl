@@ -927,11 +927,7 @@ class DiabloGame:
         cfg_file.write(cfg)
         cfg_file.close()
 
-        temp_path = os.path.join(
-            "/home/setsailforfail/Desktop/rl_diablo/DevilutionX-AI/diablo.log"
-        )
-        # log_file = open(state_dir.name + "/diablo.log", "w", buffering=1)
-        log_file = open(temp_path, "w", buffering=1)
+        log_file = open(state_dir.name + "/diablo.log", "w", buffering=1)
         state_path = state_dir.name
 
         cmd = [
