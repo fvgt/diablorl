@@ -28,57 +28,63 @@ import devilutionx as dx
 def offsetof(cls, field):
     return cls.fields[field][1]
 
+
 def addr(obj):
     # https://numpy.org/devdocs/reference/generated/numpy.ndarray.ctypes.html
-    return obj.__array_interface__['data'][0]
+    return obj.__array_interface__["data"][0]
 
 
 # Define constants
-RING_QUEUE_CAPACITY = dx.ring_queue.fields['array'][0].shape[0]
+RING_QUEUE_CAPACITY = dx.ring_queue.fields["array"][0].shape[0]
 RING_QUEUE_MASK = RING_QUEUE_CAPACITY - 1
+
 
 # Define the ring_entry_type enum
 class RingEntryType:
-    RING_ENTRY_KEY_LEFT     = 1<<0
-    RING_ENTRY_KEY_RIGHT    = 1<<1
-    RING_ENTRY_KEY_UP       = 1<<2
-    RING_ENTRY_KEY_DOWN     = 1<<3
-    RING_ENTRY_KEY_X        = 1<<4
-    RING_ENTRY_KEY_Y        = 1<<5
-    RING_ENTRY_KEY_A        = 1<<6
-    RING_ENTRY_KEY_B        = 1<<7
-    RING_ENTRY_KEY_NEW      = 1<<8
-    RING_ENTRY_KEY_SAVE     = 1<<9
-    RING_ENTRY_KEY_LOAD     = 1<<10
-    RING_ENTRY_KEY_PAUSE    = 1<<11
-    RING_ENTRY_KEY_NOOP     = 1<<12
-    RING_ENTRY_KEY_SET_GOAL = 1<<13
+    RING_ENTRY_KEY_LEFT = 1 << 0
+    RING_ENTRY_KEY_RIGHT = 1 << 1
+    RING_ENTRY_KEY_UP = 1 << 2
+    RING_ENTRY_KEY_DOWN = 1 << 3
+    RING_ENTRY_KEY_X = 1 << 4
+    RING_ENTRY_KEY_Y = 1 << 5
+    RING_ENTRY_KEY_A = 1 << 6
+    RING_ENTRY_KEY_B = 1 << 7
+    RING_ENTRY_KEY_NEW = 1 << 8
+    RING_ENTRY_KEY_SAVE = 1 << 9
+    RING_ENTRY_KEY_LOAD = 1 << 10
+    RING_ENTRY_KEY_PAUSE = 1 << 11
+    RING_ENTRY_KEY_NOOP = 1 << 12
+    RING_ENTRY_KEY_SET_GOAL = 1 << 13
 
     # Events
-    RING_ENTRY_EVENT_STEP_FINISHED = 1<<30
+    RING_ENTRY_EVENT_STEP_FINISHED = 1 << 30
 
     # Flags
-    RING_ENTRY_F_SINGLE_TICK_PRESS = 1<<31
+    RING_ENTRY_F_SINGLE_TICK_PRESS = 1 << 31
 
     # Common flags
-    RING_ENTRY_FLAGS	 = (RING_ENTRY_F_SINGLE_TICK_PRESS)
+    RING_ENTRY_FLAGS = RING_ENTRY_F_SINGLE_TICK_PRESS
 
 
 def init(ring):
     ring.write_idx = 0
     ring.read_idx = 0
 
+
 def nr_submitted_entries(ring):
     """Get number of already submitted entries in the queue."""
     return ring.write_idx - ring.read_idx
+
 
 def has_capacity_to_submit(ring):
     """Returns true if enough capacity to submit a new entry."""
     return ring.write_idx - ring.read_idx < RING_QUEUE_CAPACITY
 
+
 def get_entry_to_submit(ring):
     """Get the next entry to submit."""
     return ring.array[ring.write_idx & RING_QUEUE_MASK]
+
 
 def submit(ring):
     """Submit the current entry."""
@@ -86,8 +92,9 @@ def submit(ring):
     # __atomic_store_n(&write_idx, write_idx + 1, __ATOMIC_RELEASE)
     ring.write_idx += 1
 
-    addr_write_idx = addr(ring) + offsetof(dx.ring_queue, 'write_idx')
+    addr_write_idx = addr(ring) + offsetof(dx.ring_queue, "write_idx")
     futex.wake(addr_write_idx)
+
 
 def wait_all_retrieved(ring, read_idx=None):
     """Wait for all retrieved. Called on the producer side"""
@@ -95,9 +102,10 @@ def wait_all_retrieved(ring, read_idx=None):
         read_idx = ring.read_idx
     base_addr = addr(ring)
     while ring.write_idx != read_idx:
-        addr_read_idx = base_addr + offsetof(dx.ring_queue, 'read_idx')
+        addr_read_idx = base_addr + offsetof(dx.ring_queue, "read_idx")
         futex.wait(addr_read_idx, read_idx)
         read_idx = ring.read_idx
+
 
 def get_entry_to_retrieve(ring, read_idx=None):
     """Get the next entry to retrieve, or None if the queue is empty."""
@@ -110,12 +118,14 @@ def get_entry_to_retrieve(ring, read_idx=None):
         return None
     return ring.array[read_idx & RING_QUEUE_MASK]
 
+
 def retrieve(ring):
     """Mark the current entry as retrieved."""
     ring.read_idx += 1
     base_addr = addr(ring)
-    addr_read_idx = base_addr + offsetof(dx.ring_queue, 'read_idx')
+    addr_read_idx = base_addr + offsetof(dx.ring_queue, "read_idx")
     futex.wake(addr_read_idx)
+
 
 def wait_any_submitted(ring, read_idx=None):
     """Wait for anything submitted. Called on the consimer side"""
@@ -125,8 +135,9 @@ def wait_any_submitted(ring, read_idx=None):
     while ring.write_idx == read_idx:
         # Pass `read_idx` as expected value to avoid a race, since
         # `write_idx` can be increased by the producer
-        addr_write_idx = base_addr + offsetof(dx.ring_queue, 'write_idx')
+        addr_write_idx = base_addr + offsetof(dx.ring_queue, "write_idx")
         futex.wait(addr_write_idx, read_idx)
+
 
 # Example Usage
 if __name__ == "__main__":
@@ -162,7 +173,7 @@ if __name__ == "__main__":
     assert i == RING_QUEUE_CAPACITY
 
     # Retrieve everything
-    i = 0;
+    i = 0
     while True:
         entry = get_entry_to_retrieve(ring)
         if entry == None:
@@ -227,7 +238,7 @@ if __name__ == "__main__":
         entry.en_data1 = 0x222
         print("child:  submitted to parent")
         submit(ring)
-        wait_all_retrieved(ring);
+        wait_all_retrieved(ring)
         print("child:  all retrieved by parent")
     else:
         # Parent

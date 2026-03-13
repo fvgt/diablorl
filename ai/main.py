@@ -1,22 +1,31 @@
 import sys
 import os
-from utils import set_rlimits, set_sighandlers, delayed_import
-from parser import get_parser
+from utils import delayed_import
 import configparser
 from pathlib import Path
 import re
-import procutils
-from rl.train import train
-from rl.expert_demonstrations import collect_experience
-from utils import run_tui
-import curses
-import utils
 
 
 def main():
-    # Set default signal handlers
+    config = configparser.ConfigParser()
+    config.read("diablo-ai.ini")
+
+    diablo_build_path = Path(config["default"]["diablo-build-path"]).resolve()
+    diablo_bin_path = str(diablo_build_path / "devilutionx")
+
+    # important to do this first
+    delayed_import(diablo_bin_path)
+
+    from utils import set_rlimits, set_sighandlers
+    from parser import get_parser
+    import procutils
+    import curses
+    import utils
+    from rl.train import train
+    from rl.expert_demonstrations import collect_experience
+    from diablo_play import run_tui
+
     set_sighandlers()
-    # Set big enough limits
     set_rlimits()
 
     incompatible_options, parser = get_parser()

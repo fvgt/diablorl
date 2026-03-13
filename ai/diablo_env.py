@@ -157,11 +157,8 @@ class DiabloEnv(gym.Env):
         neighbors = []
 
         # Your original offsets (N, NE, E, SE, S, SW, W, NW)
-        offsets = [
-            (0, -1), (1, -1), (1, 0), (1, 1), 
-            (0, 1), (-1, 1), (-1, 0), (-1, -1)
-        ]
-        
+        offsets = [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)]
+
         for dx, dy in offsets:
             x, y = i + dx, j + dy
             if 0 <= x < rows and 0 <= y < cols:
@@ -496,7 +493,6 @@ class DiabloEnv(gym.Env):
         explored_cnt = diablo_state.count_explored_tiles(d)
         hp = d.player._pHitPoints
         player_pos = diablo_state.player_position(d)
-
 
         # Exploration reward
         # +1. calculate number of explored tiles, compare with a previous step
