@@ -149,7 +149,7 @@ def main():
     elif args.command == "train":
         train(args=args, gameconfig=gameconfig)
     elif args.command == "eval":
-        evaluate_trained_agent(args=args, gameconfig=gameconfig)
+        curses.wrapper(lambda stdscr: evaluate_trained_agent(stdscr, args, gameconfig))
 
 
 if __name__ == "__main__":
