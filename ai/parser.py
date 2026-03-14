@@ -228,6 +228,25 @@ def get_parser():
         default=500_000,
     )
 
+    eval_rl_parser = subparsers.add_parser(
+        "eval",
+        parents=[common_parser],
+        help="Eval the trained RL agent",
+        formatter_class=IndentedHelpFormatter,
+    )
+
+    eval_rl_parser.add_argument(
+        "--model_path",
+        type=str,
+        default="",
+        help="Path of the trained model",
+    )
+    eval_rl_parser.add_argument(
+        "--env",
+        help="name of the environment to eval on",
+        default="Diablo-FindNextLevelWithEnemies-v0",
+    )
+
     collect_experience = subparsers.add_parser(
         "collect_experience",
         parents=[common_parser],

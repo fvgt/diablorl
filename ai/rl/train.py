@@ -12,6 +12,7 @@ from rl.buffer import (
     OfflineBuffer,
 )
 import wandb
+import json
 from rl.env.parallel_env import ParallelEnv
 import devilutionx as dx
 
@@ -23,6 +24,8 @@ from tqdm import tqdm
 from rl.utils.evaluate import evaluate
 from rl.agent.agent_wrapper import InputNormalizationWrapper
 from rl.utils.normalization import RewardNormalizer
+from rl.utils.save_utils import save_to_pkl
+from rl.utils.load_utils import load_from_pkl
 
 torch.set_float32_matmul_precision("high")
 torch.backends.cudnn.benchmark = True
@@ -281,5 +284,4 @@ def train(args, gameconfig):
 
             save_dir = "./saved_models/agent"
             os.makedirs(save_dir, exist_ok=True)
-            save_file = os.path.join(save_dir, "recurrent_dqn_final.pth")
-            agent.save(save_file)
+            save_to_pkl(path=os.path.join(save_dir, "test_agent"), obj=agent)

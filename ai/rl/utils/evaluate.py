@@ -14,8 +14,7 @@ class EventsQueue:
         self.queue = collections.deque(maxlen=10)
 
 
-def evaluate(env, agent, _mem):
-    n_episodes = 1
+def evaluate(env, agent, _mem, n_episodes):
     n_envs = 1
     total_rewards = np.zeros(shape=(n_envs, n_episodes))
     total_success = np.zeros(shape=(n_envs, n_episodes))

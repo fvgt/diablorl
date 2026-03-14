@@ -11,8 +11,9 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "args": [
-                "collect_experience",
-                "--harmless-barrels"
+                "eval",
+                "--model_path",
+                "/home/setsailforfail/Desktop/DevilutionX-AI/ai/saved_models/agent"
             ]
         }
     ]

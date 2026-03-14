@@ -22,6 +22,7 @@ def main():
     import curses
     import utils
     from rl.train import train
+    from rl.evaluate import evaluate_trained_agent
     from rl.expert_demonstrations import collect_experience
     from diablo_play import run_tui
 
@@ -147,6 +148,8 @@ def main():
         collect_experience(args, gameconfig)
     elif args.command == "train":
         train(args=args, gameconfig=gameconfig)
+    elif args.command == "eval":
+        evaluate_trained_agent(args=args, gameconfig=gameconfig)
 
 
 if __name__ == "__main__":
