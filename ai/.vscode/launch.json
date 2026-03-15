@@ -13,7 +13,9 @@
             "args": [
                 "eval",
                 "--model_path",
-                "/home/setsailforfail/Desktop/DevilutionX-AI/ai/saved_models/agent"
+                "saved_models/cpu_agent",
+                "--device",
+                "cpu"
             ]
         }
     ]

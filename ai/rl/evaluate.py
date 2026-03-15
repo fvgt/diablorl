@@ -4,6 +4,7 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 from rl.env.parallel_env import ParallelEnv
 import devilutionx as dx
+import diablo_env
 
 from rl.models.recurrent import RecurrentModel
 from rl.agent.dqn import RecurrentDQN
@@ -20,21 +21,30 @@ from utils import EventsQueue, open_envlog
 import ring
 import torch
 import time
-
+from rl.utils.action_mask import build_action_mask_fn
+import numpy as np
 
 RUNNING = True
 LAST_KEY = 0
 
 
-def getting_agent_action(agent, memory, obs, info):
+def get_env_status(d):
+    monsters_cnt = diablo_state.count_active_monsters(d)
+    hp = d.player._pHitPoints
+    mode = d.player._pmode
+    player_pos = diablo_state.player_position(d)
+    return np.array([monsters_cnt, hp, mode, *player_pos], dtype=np.uint32)
+
+
+def getting_agent_action(agent, memory, obs, game_features, get_action_mask):
     global LAST_KEY
     global RUNNING
 
-    current_game_features = info["game_features"]
-    action, memory = agent.greedy_actions(
+    action_mask = get_action_mask(
         obs=obs,
-        game_features=current_game_features,
-        memory=memory,
+    )
+    action, memory = agent.sample(
+        obs=obs, game_features=game_features, memory=memory, masks=action_mask
     )
 
     # from numpy to int
@@ -66,20 +76,15 @@ def evaluate_trained_agent(stdscr, args, gameconfig):
     global LAST_KEY
 
     lstm_hidden_dim = 128
-    device = "cuda"
-
-    eval_env = ParallelEnv(
-        env_name=args.env,
-        gameconfig=gameconfig,
-        n_envs=1,
-        seeds=[args.seed],
-    )
-
-    agent = load_from_pkl(path=os.path.join(args.model_path, "test_agent"))
-    memory = torch.zeros(1, lstm_hidden_dim, device=device)
+    agent = load_from_pkl(path=args.model_path)
+    memory = torch.zeros(1, lstm_hidden_dim, device=args.device)
 
     # Run or attach to Diablo
     game = diablo_state.DiabloGame.run_or_attach(gameconfig)
+
+    # create the action mask to filter invalid actions
+    n_actions = len(diablo_env.ActionEnum)
+    get_action_mask = build_action_mask_fn(gameconfig=gameconfig, n_actions=n_actions)
 
     # Disable cursor and enable keypad input
     curses.curs_set(0)
@@ -108,10 +113,17 @@ def evaluate_trained_agent(stdscr, args, gameconfig):
         stdscr.refresh()
 
         # Handle keys
-        obs = diablo_state.get_environment(d=d, radius=10)
-        info = {}
-        info["game_features"] = torch.ones(size=(1, 5), device=device)
-        while not getting_agent_action(agent=agent, memory=memory, obs=obs, info=info):
+        obs = diablo_state.get_environment(d=d, radius=gameconfig["view-radius"])[
+            np.newaxis
+        ]
+        game_features = get_env_status(d=d)[np.newaxis]
+        while not getting_agent_action(
+            agent=agent,
+            memory=memory,
+            obs=obs,
+            game_features=game_features,
+            get_action_mask=get_action_mask,
+        ):
             pass
 
         game.update_ticks()

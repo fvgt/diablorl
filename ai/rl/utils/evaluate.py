@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import collections
+from rl.utils.action_mask import build_action_mask_fn
 
 
 class EventsQueue:
@@ -14,7 +15,7 @@ class EventsQueue:
         self.queue = collections.deque(maxlen=10)
 
 
-def evaluate(env, agent, _mem, n_episodes):
+def evaluate(env, agent, _mem, n_episodes, action_mask_fn):
     n_envs = 1
     total_rewards = np.zeros(shape=(n_envs, n_episodes))
     total_success = np.zeros(shape=(n_envs, n_episodes))
@@ -26,10 +27,13 @@ def evaluate(env, agent, _mem, n_episodes):
         frames = []
         while not np.all(np.logical_or(ongoing_dones, ongoing_truncs)):
             current_game_features = infos["game_features"]
-            actions, memory = agent.greedy_actions(
+            mask = action_mask_fn(obs, env)
+            actions, memory = agent.sample(
                 obs=obs,
                 game_features=current_game_features,
                 memory=memory,
+                masks=mask,
+                update_eps=False,
             )
             next_obs, rewards, done, trunc, infos = env.step(actions)
             total_rewards[:, i] += rewards * (1 - ongoing_dones)

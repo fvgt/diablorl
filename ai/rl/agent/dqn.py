@@ -71,7 +71,7 @@ class RecurrentDQN:
             target_param.data.add_(tau * online_param.data)
 
     @torch.no_grad()
-    def sample(self, obs, game_features, memory, masks):
+    def sample(self, obs, game_features, memory, masks, update_eps):
         # CrossQ
         masks = torch.tensor(masks)
         self.model.q.eval()
@@ -83,7 +83,7 @@ class RecurrentDQN:
 
         # Mask Q-values for greedy selection
         masked_values = values.clone()
-        masked_values[masks == True] = -float("inf")
+        masked_values[masks == False] = -float("inf")
 
         actions = torch.empty(n_envs, dtype=torch.long, device=values.device)
 
@@ -91,25 +91,29 @@ class RecurrentDQN:
             if random.random() < current_epsilon:
                 # Randomly choose among allowed actions
                 allowed_actions = (
-                    torch.nonzero(~masks[i], as_tuple=False).squeeze(-1).tolist()
+                    torch.nonzero(masks[i], as_tuple=False).squeeze(-1).tolist()
                 )
                 actions[i] = random.choice(allowed_actions)  # <- correct!
             else:
                 # Greedy action
                 actions[i] = torch.argmax(masked_values[i])
 
-        self.eps_scheduler.update()
+        if update_eps:
+            self.eps_scheduler.update()
 
         return actions.cpu().numpy(), memory
 
     @torch.no_grad()
-    def greedy_actions(self, obs, game_features, memory):
+    def greedy_actions(self, obs, game_features, memory, mask):
         # CrossQ
         self.model.q.eval()
 
         obs = obs.to(self.device)
         values, _, memory = self.model(obs, game_features, memory)
-        greedy_actions = torch.argmax(values, dim=-1)
+        # apply action mask
+        masked_values = values.clone()
+        masked_values[mask == False] = -float("inf")
+        greedy_actions = torch.argmax(masked_values, dim=-1)
         return greedy_actions.cpu().numpy(), memory
 
     @staticmethod
@@ -196,6 +200,10 @@ class RecurrentDQN:
                 index=batch.actions.reshape(-1)[:, None, None].expand(-1, 1, 101),
             ).squeeze(1)
             target_log_probs = target_infos["log_probs"]
+            # filter out invalid actions
+            next_q_values[
+                ~batch.next_action_mask_seq.reshape(-1, next_q_values.shape[-1]).bool()
+            ] = -torch.inf
             max_indices = torch.argmax(next_q_values, dim=-1)
             target_log_probs = torch.gather(
                 target_log_probs,
@@ -225,61 +233,6 @@ class RecurrentDQN:
             self.soft_update(tau=self.tau)
 
         return loss, q_values, torch.zeros(())
-
-    # @torch.jit.script
-    # def update(self, batch):
-    # B, seq_length = batch.obs.shape[:2]
-    # device = batch.obs.device
-    # total_loss = 0.0
-    #
-    # memory = torch.zeros((B, 128), device=device)
-    # target_memory = torch.zeros((B, 128), device=device)
-    #
-    # with torch.no_grad():
-    # for j in range(self.burn_in_phase):
-    # obs = batch.obs[:, j]
-    # next_obs = batch.next_obs[:, j]
-    # mask = batch.loss_mask[:, j]
-    #
-    # _, memory = self.model(obs, memory * mask)
-    # _, target_memory = self.target_model(next_obs, target_memory * mask)
-    #
-    #
-    # for i in range(self.recurrence_length):
-    # obs = batch.obs[:, i + self.burn_in_phase]
-    # next_obs = batch.next_obs[:, i + self.burn_in_phase]
-    # mask = batch.loss_mask[:, i + self.burn_in_phase]
-    #
-    # q_values, memory = self.model(obs, memory * mask)
-    #
-    # with torch.no_grad():
-    # next_q_values, target_memory = self.target_model(next_obs, target_memory * mask)
-    # target_q = (
-    # batch.rewards[:, i]
-    # + self.discount
-    # * next_q_values.max(dim=-1)[0]
-    # * (1 - batch.dones[:, i].float())
-    # )
-    #
-    # chosen_q = q_values.gather(-1, batch.actions[:, i]).squeeze(-1)
-    # td_error = chosen_q - target_q
-    # loss = (td_error ** 2) * mask.squeeze()
-    # total_loss += loss.mean()
-    #
-    #
-    # total_loss /= (seq_length - self.burn_in_phase)
-    # self.optimizer.zero_grad()
-    # total_loss.backward()
-    # self.optimizer.step()
-    #
-    # self.update_steps += 1
-    #
-    # if self.update_steps % self.target_net_update_freq == 0:
-    # self.soft_update(tau=self.tau)
-    #
-    #
-    # return total_loss, q_values, target_q
-    #
 
     def run_recurrent_loop(
         self,

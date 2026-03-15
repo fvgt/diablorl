@@ -26,12 +26,18 @@ from rl.agent.agent_wrapper import InputNormalizationWrapper
 from rl.utils.normalization import RewardNormalizer
 from rl.utils.save_utils import save_to_pkl
 from rl.utils.load_utils import load_from_pkl
+from rl.utils.action_mask import build_action_mask_fn
 
 torch.set_float32_matmul_precision("high")
 torch.backends.cudnn.benchmark = True
 
 
 def train(args, gameconfig):
+
+    agent = load_from_pkl(path="saved_models/check_potential_bug")
+    save_to_pkl(path="saved_models/cpu_agent", obj=agent, move_to_cpu=True)
+
+    exit()
     # Init wandb
     args_dict = vars(args)
     wandb_init_kwargs = dict(entity="fvgt", project="rl_diablo", config=args_dict)
@@ -67,6 +73,7 @@ def train(args, gameconfig):
             n_additional_feat=n_additional_feat,
             recurrence_length=args.recurrence_length,
             burn_in_phase=args.burn_in_phase,
+            n_actions=n_actions,
         )
 
         offline_buffer = OfflineBuffer(
@@ -76,6 +83,7 @@ def train(args, gameconfig):
             n_additional_feat=n_additional_feat,
             recurrence_length=args.recurrence_length,
             burn_in_phase=args.burn_in_phase,
+            n_actions=n_actions,
             data_dir="/home/"
             "setsailforfail/Desktop/DevilutionX-AI/ai/data/offline_demonstrations/seed_1",
         )
@@ -113,9 +121,12 @@ def train(args, gameconfig):
             target_net_update_freq=args.target_net_update_freq,
             lr=args.lr,
         )
+        # agent.load(
+        # "/home/setsailforfail/Desktop/DevilutionX-AI/ai/saved_models/agent/recurrent_dqn_final.pth"
+        # )
 
         agent = InputNormalizationWrapper(
-            agent=agent, obs_space=train_envs.observation_space
+            agent=agent, obs_space=train_envs.observation_space, device=args.device
         )
 
         reward_normalization = RewardNormalizer(
@@ -128,65 +139,28 @@ def train(args, gameconfig):
         env_steps = 0
         frames = []
 
-        def get_action_mask(obs, env):
-            # Ensure n_actions matches your ActionEnum size (e.g., 8 for movement)
-            n_actions = 11
-            masks = np.zeros(shape=(len(env.penv_pool.envs), n_actions), dtype=bool)
-
-            # Map neighbor index to the corresponding Walk Action
-            # This assumes get_matrix_neighbors returns: 0:N, 1:NE, 2:E, 3:SE, 4:S, 5:SW, 6:W, 7:NW
-            idx_to_action = {
-                0: ActionEnum.Walk_N.value,
-                1: ActionEnum.Walk_NE.value,
-                2: ActionEnum.Walk_E.value,
-                3: ActionEnum.Walk_SE.value,
-                4: ActionEnum.Walk_S.value,
-                5: ActionEnum.Walk_SW.value,
-                6: ActionEnum.Walk_W.value,
-                7: ActionEnum.Walk_NW.value,
-            }
-
-            for i, (o, e) in enumerate(zip(obs, env.penv_pool.envs)):
-                v_radius = gameconfig["view-radius"]
-                player_pos = (v_radius, v_radius)
-
-                # neighbors are [N -> clockwise to NE]
-                assert (
-                    o[player_pos[0], player_pos[1]]
-                    & diablo_state.EnvironmentFlag.Player.value
-                )
-                neighbors = DiabloEnv.get_matrix_neighbors(o, *player_pos)
-                # print(diablo_state.player_position(d=e.game.safe_state))
-
-                # Check every neighbor index (0 through 7)
-                for idx, tile_flag in enumerate(neighbors):
-                    # If the tile contains a Wall flag
-                    if tile_flag & diablo_state.EnvironmentFlag.Wall.value:
-                        # Get the action associated with this neighbor index
-                        forbidden_action = idx_to_action[idx]
-                        # Set mask to True (Forbidden)
-                        masks[i, forbidden_action] = True
-
-            return masks
+        get_action_mask = build_action_mask_fn(
+            gameconfig=gameconfig, n_actions=n_actions
+        )
+        action_mask = get_action_mask(obs)
 
         with tqdm(total=args.max_env_steps, desc="Environment Steps") as pbar:
             while env_steps < args.max_env_steps:
                 current_game_features = infos["game_features"]
 
-                masks = get_action_mask(obs, train_envs)
                 actions, memory = agent.sample(
                     obs=obs,
                     game_features=current_game_features,
                     memory=memory,
-                    masks=masks,
+                    masks=action_mask,
                 )
                 if env_steps < args.start_training:
                     actions = np.random.randint(n_actions, size=(args.n_envs,))
-                # actions = np.ones(shape=(args.n_envs)) * 0
 
                 next_obs, rewards, terminated, truncated, infos = train_envs.step(
                     actions
                 )
+                next_action_mask = get_action_mask(obs)
                 reward_normalization.update(rewards, terminated, truncated)
 
                 frame = train_envs.render(mode="image")
@@ -201,6 +175,7 @@ def train(args, gameconfig):
                     trunc=truncated,
                     game_features=current_game_features,
                     next_game_features=infos["game_features"],
+                    next_action_mask=next_action_mask,
                 )
 
                 if np.logical_or(terminated[0], truncated[0]):
@@ -217,6 +192,7 @@ def train(args, gameconfig):
                 obs, infos = train_envs.reset_where_done(
                     obs, infos, terminated, truncated, seeds=seeds
                 )
+                action_mask = next_action_mask
 
                 if env_steps > args.start_training:
                     online_batch = replay_buffer.sample(batch_size=args.batch_size // 2)
@@ -224,7 +200,11 @@ def train(args, gameconfig):
                         batch_size=args.batch_size // 2
                     )
                     batch = Batch.combine(online_batch, offline_batch)
-                    normalized_rewards = reward_normalization.normalize(batch.rewards)
+
+                    unnormalized_rewards = batch.rewards
+                    normalized_rewards = reward_normalization.normalize(
+                        unnormalized_rewards
+                    )
                     batch = batch._replace(rewards=normalized_rewards)
 
                     # batch = create()
@@ -246,9 +226,8 @@ def train(args, gameconfig):
                         "train/epsilon": agent.agent.eps_scheduler.get_epsilon(),
                         "train/batch_reward": batch.rewards.cpu().numpy().mean(),
                         "train/seq_lengths": batch.seq_lengths.cpu().numpy().mean(),
-                        # Optional info
-                        # "train/monsters_killed": info[0]['monsters_killed'],
-                        # "train/initial_monsters": info[0]['initial_monsters'],
+                        "train/G_rms_var": reward_normalization.G_rms.var.mean(),
+                        "train/unnormalized_rewards": unnormalized_rewards.mean(),
                     }
 
                     # Format stats nicely for tqdm
@@ -268,6 +247,8 @@ def train(args, gameconfig):
                         env=eval_envs,
                         agent=agent,
                         _mem=memory,
+                        n_episodes=1,
+                        action_mask_fn=get_action_mask,
                     )
                     wandb_run.log(
                         {
@@ -284,4 +265,4 @@ def train(args, gameconfig):
 
             save_dir = "./saved_models/agent"
             os.makedirs(save_dir, exist_ok=True)
-            save_to_pkl(path=os.path.join(save_dir, "test_agent"), obj=agent)
+            save_to_pkl(path=os.path.join(save_dir, "check_potential_bug"), obj=agent)

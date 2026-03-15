@@ -238,7 +238,7 @@ def get_parser():
     eval_rl_parser.add_argument(
         "--model_path",
         type=str,
-        default="",
+        default="saved_models/agent",
         help="Path of the trained model",
     )
     eval_rl_parser.add_argument(

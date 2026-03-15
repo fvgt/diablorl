@@ -21,6 +21,7 @@ class Batch(NamedTuple):
     game_features: torch.Tensor
     next_game_features: torch.Tensor
     seq_lengths: torch.Tensor
+    next_action_mask_seq: torch.Tensor
 
     @staticmethod
     def combine(batch1, batch2):
@@ -37,6 +38,7 @@ class ReplayBuffer:
         n_envs,
         capacity,
         obs_shape,
+        n_actions,
         n_additional_feat,
         recurrence_length,
         burn_in_phase,
@@ -51,6 +53,7 @@ class ReplayBuffer:
         self.obs = np.zeros((n_envs, capacity, *obs_shape), dtype=np.int32)
         # self.next_obs = np.zeros((n_envs, capacity, *obs_shape), dtype=np.int32)
         self.actions = np.zeros((n_envs, capacity), dtype=np.int64)
+        self.next_action_masks = np.ones((n_envs, capacity, n_actions), dtype=np.int8)
         self.rewards = np.zeros((n_envs, capacity), dtype=np.float32)
         self.dones = np.zeros((n_envs, capacity), dtype=np.bool)
         self.game_features = np.zeros(
@@ -78,6 +81,7 @@ class ReplayBuffer:
         trunc,
         game_features,
         next_game_features,
+        next_action_mask,
     ):
         self.obs[:, self.insert_index] = obs
         self.actions[:, self.insert_index] = action
@@ -85,6 +89,7 @@ class ReplayBuffer:
         self.dones[:, self.insert_index] = done
         self.game_features[:, self.insert_index] = game_features
         self.next_game_features[:, self.insert_index] = next_game_features
+        self.next_action_masks[:, self.insert_index] = next_action_mask
         self.episode_lengths += 1
 
         episode_over_idxs = np.where(np.logical_or(done, trunc))[0]
@@ -130,6 +135,7 @@ class ReplayBuffer:
         next_game_feat_seq = self.next_game_features[:, lstm_seq_idxs]
 
         actions_seq = self.actions[:, default_seq_idxs]
+        next_action_mask_seq = self.next_action_masks[:, default_seq_idxs]
         rewards_seq = self.rewards[:, default_seq_idxs]
         dones_seq = self.dones[:, default_seq_idxs]
 
@@ -173,6 +179,9 @@ class ReplayBuffer:
                 device
             ),
             seq_lengths=torch.from_numpy(seq_lengths.reshape(-1)).to(device),
+            next_action_mask_seq=torch.from_numpy(
+                next_action_mask_seq.reshape(-1, *next_action_mask_seq.shape[2:])
+            ).to(device),
         )
 
 
@@ -186,6 +195,7 @@ class OfflineBuffer(ReplayBuffer):
         recurrence_length,
         burn_in_phase,
         data_dir,
+        n_actions,
     ):
         # Initialize the parent class first
         super().__init__(
@@ -195,6 +205,7 @@ class OfflineBuffer(ReplayBuffer):
             n_additional_feat=n_additional_feat,
             recurrence_length=recurrence_length,
             burn_in_phase=burn_in_phase,
+            n_actions=n_actions,
         )
 
         obs = []
@@ -204,6 +215,7 @@ class OfflineBuffer(ReplayBuffer):
         game_features = []
         next_game_features = []
         remaining_episode_lengths = []
+
         files = [
             os.path.join(data_dir, f)
             for f in os.listdir(data_dir)
@@ -229,6 +241,9 @@ class OfflineBuffer(ReplayBuffer):
         self.actions = np.concatenate(actions, axis=0, dtype=self.actions.dtype)[
             None, ...
         ]
+        self.next_action_masks = np.ones(
+            shape=(n_envs, self.actions.shape[1], n_actions)
+        )
         self.rewards = np.concatenate(rewards, axis=0, dtype=self.rewards.dtype)[
             None, ...
         ].squeeze(-1)

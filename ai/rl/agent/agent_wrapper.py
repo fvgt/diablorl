@@ -41,15 +41,19 @@ class InputNormalizationWrapper:
 
         return normalized_feat
 
-    def sample(self, obs, game_features, memory, masks):
+    def sample(self, obs, game_features, memory, masks, update_eps=True):
         normalized_obs = self.process_obs(obs)
         normalized_features = self.process_game_features(game_features)
-        return self.agent.sample(normalized_obs, normalized_features, memory, masks)
+        return self.agent.sample(
+            normalized_obs, normalized_features, memory, masks, update_eps
+        )
 
-    def greedy_actions(self, obs, game_features, memory):
+    def greedy_actions(self, obs, game_features, memory, mask):
         normalized_obs = self.process_obs(obs)
         normalized_features = self.process_game_features(game_features)
-        return self.agent.greedy_actions(normalized_obs, normalized_features, memory)
+        return self.agent.greedy_actions(
+            normalized_obs, normalized_features, memory, mask
+        )
 
     def update(self, batch: Batch):
         obs = self.process_obs(batch.obs)
